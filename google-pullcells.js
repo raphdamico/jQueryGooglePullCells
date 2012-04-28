@@ -1,7 +1,7 @@
 (function( $ ) {
   $.getDataFromGoogleSpreadsheet = function( options ) {
 
-  	var DEBUG = false;
+  	var DEBUG = true;
   	function consoleOut(args) {
 		if (DEBUG === true) {
   			console.log(args);
@@ -12,7 +12,7 @@
  	var config = $.extend( {
  		key: '0AkT7EMSlHl5hdDVvRTFaQV9vS1U1eW1NTTRyT1hja0E',
  		sheet: 'od5',
-		colsToGet: 'A:C',
+		colsToGet: 'A:D',
 		rowProcessor: defaultRowProcessor,
 		success: defaultCallback
     }, options);
@@ -57,10 +57,6 @@
 		letter1Score = turnLettersIntoScores(splitLetters[0]);
 		letter2Score = turnLettersIntoScores(splitLetters[1]);
 
-		// NOTE - this does not check that each range is well formed. This system
-		// will break horribly if the letters are in the wrong order
-		console.log(splitLetters, letter1Score, letter2Score);
-
 		if (letter1Score > letter2Score) {
 			var letter1ScoreTemp = letter1Score;
 			letter1Score = letter2Score;
@@ -79,97 +75,112 @@
 			var secondLetter = alphabet[i%26];
 			outArray[i] = firstLetter + secondLetter;
 		}
-		console.log(outArray);
 		return outArray;
 	};
 
 	// Process data
 	function processDataFromGoogleSpreadsheet(callback) {
 
-		var contentIn = callback.feed.entry;
-		var tmp = { row: {} };
-		var _rowData;
-		var _outputData = [];
-
-		// Get column names
-		var colNames = {};
-		var colsToGet = expandLetterRange(config.colsToGet);
-		for (var i=0; i<colsToGet.length; i++) {
-			colNames[colsToGet[i]] = contentIn[i].content.$t;
+		if (_.isUndefined(callback.feed.entry) === true) {
+			consoleOut('Your spreadsheet appears to be empty.');
+			config.success.call(this, []);
 		}
+		else {
+			var contentIn = callback.feed.entry;
+			var tmp = { row: {} };
+			var _rowData;
+			var _outputData = [];
 
-		// Calculate how many relevant rows of cells to pull in by
-		// finding the last cell that lies within our chosen range
-		var lastCellInRange = _.max(contentIn, function(entry){
-			var letter = entry.title.$t.match(/[A-Z]+/)[0];
-			var number = parseInt(entry.title.$t.match(/[0-9]+/)[0]);
-			if (_.isUndefined(colNames[letter]) === false) {
-				return number;
-			}
-		});
+			// Get column names
+			var colNames = {};
+			var colsToGet = expandLetterRange(config.colsToGet);
 
-		//var lastCellRow = contentIn[contentIn.length-1].title.$t.match(/[0-9]+/)[0];
-		var lastCellRow = lastCellInRange.title.$t.match(/[0-9]+/)[0];
-		var numCells = lastCellRow * colsToGet.length;
+			// Calculate how many relevant rows of cells to pull in by
+			// finding the last cell that lies within our chosen range
+			var lastCellInRange = _.max(contentIn, function(entry){
+				var letter = entry.title.$t.match(/[A-Z]+/)[0];
+				var number = parseInt(entry.title.$t.match(/[0-9]+/)[0]);
+				if (colsToGet.indexOf(letter) !== -1) {
+					return number;
+				}
+			});
 
-		// Loop through cells from Google Docs
-		var curCell = colsToGet.length;						// Skip first row of spreadsheet
-		for (var row=1; row<lastCellRow; row++) { 					// Rows
-			for (var col=0; col<colsToGet.length; col++) {	// Cols
+			//var lastCellRow = contentIn[contentIn.length-1].title.$t.match(/[0-9]+/)[0];
+			var lastCellRow = lastCellInRange.title.$t.match(/[0-9]+/)[0];
+			var numCells = lastCellRow * colsToGet.length;
 
-				// Work out which cell name (e.g. A1) *should* appear next
-				// so we can see if there are any gaps in the feed
-				var expectedCellLetter = colsToGet[col];
-				var expectedCell = expectedCellLetter + (row+1);
-				var curColName = colNames[expectedCellLetter];
+			// Loop through cells from Google Docs
+			var curCell = colsToGet.length;						// Skip first row of spreadsheet
+			for (var row=0; row<lastCellRow; row++) { 					// Rows
+				for (var col=0; col<colsToGet.length; col++) {	// Cols
 
-				// Go through the google spreadsheet feed until
-				// we find a cell that is within our range
-				var skipCount = 0
-				for (var skipped = 0; skipped <= skipCount; skipped++ ) {
-					var nextCell = curCell + skipped;
-					// Cache cell name
-					if (_.isUndefined(contentIn[nextCell]) === false ){
-						tmp.cellName = contentIn[nextCell].title.$t;
-						tmp.cellLetter = tmp.cellName.match(/[A-Z]+/)[0];
+					// Go through the google spreadsheet feed until
+					// we find a cell that is within our range
+					var skipCount = 0
+					for (var skipped = 0; skipped <= skipCount; skipped++ ) {
+						var nextCell = curCell + skipped;
+						// Cache cell name
+						if (_.isUndefined(contentIn[nextCell]) === false ){
+							tmp.cellName = contentIn[nextCell].title.$t;
+							tmp.cellLetter = tmp.cellName.match(/[A-Z]+/)[0];
 
-						// Check if the cell we just got is within the columns we've specified above.
-						// If not (e.g. E5, and we haven't chosen any E columns) just move on to the next cell
-						if (_.isUndefined(colNames[tmp.cellLetter])) {
-							consoleOut('Oh no! Cell is outside our chosen range:', tmp.cellName, colsToGet);
-							skipCount++	// Let's try the next cell in our feed
+							// Check if the cell we just got is within the columns we've specified above.
+							// If not (e.g. E5, and we haven't chosen any E columns) just move on to the next cell
+							if (colsToGet.indexOf(tmp.cellLetter) === -1) {
+								consoleOut('Oh no! Cell is outside our chosen range:', tmp.cellName, colsToGet);
+								skipCount++	// Let's try the next cell in our feed
+							}
+						}
+					}
+
+					// Work out which cell name (e.g. A1) *should* appear next
+					// so we can see if there are any gaps in the feed
+					curCell = nextCell;
+					var expectedCellLetter = colsToGet[col];
+					var expectedCell = expectedCellLetter + (row+1);
+
+					// Title row
+					if (row === 0) {
+						if (contentIn[col].title.$t === expectedCell) {
+							colNames[colsToGet[col]] = contentIn[col].content.$t;
+						}
+						else {
+							colNames[colsToGet[col]] = 'noNameCol' + (col+1);
+						}
+					}
+					// Main body
+					else {
+						var curColName = colNames[expectedCellLetter];
+						// Use data from google spreadsheet if present, otherwise create property in the projects object
+						if (tmp.cellName === expectedCell) {
+							tmp.row[curColName] = contentIn[curCell].content.$t;
+							curCell++;
+						}
+						else {
+							if (colsToGet.indexOf(tmp.cellLetter) === -1) {
+								consoleOut('Oh no! Cell is outside our chosen range:', tmp.cellName, colsToGet);
+								// This will only trigger if the last cell in our spreadsheet feed is outside the col range
+							}
+							else {
+								tmp.row[curColName] = 'ERROR';
+								consoleOut('Oh no! Cell is blank in spreadsheet:', expectedCell);
+							}
 						}
 					}
 				}
 
-				curCell = nextCell;
+				if (row > 0) {
+					// Call function that processes row before adding it to the data structure
+					tmp.row = config.rowProcessor.call(this, tmp.row, row);
 
-				// Use data from google spreadsheet if present, otherwise create property in the projects object
-				if (tmp.cellName === expectedCell) {
-					tmp.row[curColName] = contentIn[curCell].content.$t;
-					curCell++;
+					// Add row to output array and reset to ready for next row
+					_outputData.push(tmp.row);
+					tmp.row = {};
 				}
-				else {
-					if (_.isUndefined(colNames[tmp.cellLetter])) {
-						consoleOut('Oh no! Cell is outside our chosen range:', tmp.cellName, colsToGet);
-						// This will only trigger if the last cell in our spreadsheet feed is outside the col range
-					}
-					else {
-						tmp.row[curColName] = 'ERROR';
-						consoleOut('Oh no! Cell is blank in spreadsheet:', expectedCell);
-					}
-				}
+
 			}
-
-			// Call function that processes row before adding it to the data structure
-			tmp.row = config.rowProcessor.call(this, tmp.row, row);
-
-			// Add row to output array and reset to ready for next row
-			_outputData.push(tmp.row);
-			tmp.row = {};
-
+			config.success.call(this, _outputData);
 		}
-		config.success.call(this, _outputData);
 	}
   };
 })( jQuery );

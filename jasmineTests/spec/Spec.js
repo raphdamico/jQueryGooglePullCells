@@ -64,7 +64,7 @@ describe("Google Spreadsheet Loader", function() {
         expect(countDataOut(DATA)).toEqual(20);
     });
     it("Additional column should get assigned a default column title", function() {
-      expect(_.keys(DATA[0])[3]).toEqual('noNameColumn4');
+      expect(_.keys(DATA[0])[3]).toEqual('noNameCol4');
     });
   })
 
